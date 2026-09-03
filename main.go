@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 
 	"github.com/vjeantet/goldap/message"
@@ -41,22 +43,21 @@ func main() {
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
 	close(ch)
-
 	server.Stop()
 }
 
 func getEnvVar(key, fallback string) string {
-    value, exists := os.LookupEnv(key)
-    if !exists {
-        value = fallback
-    }
-    return value
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		value = fallback
+	}
+	return value
 }
 
-func getCreds() (string, string, string, string){
-	sqlserver := getEnvVar("FREEPBX_SQLSERVER", "127.0.0.1:3306")
-	sqluser := getEnvVar("FREEPBX_SQLUSER", "root")
-	sqlpass := getEnvVar("FREEPBX_SQLPASS", "")
+func getCreds() (string, string, string, string) {
+	sqlserver := getEnvVar("FREEPBX_SQLSERVER", "localhost:3306")
+	sqluser := getEnvVar("FREEPBX_SQLUSER", "myuserorroot")
+	sqlpass := getEnvVar("FREEPBX_SQLPASS", "mypassword")
 	sqldb := getEnvVar("FREEPBX_SQLDB", "asterisk")
 	return sqlserver, sqluser, sqlpass, sqldb
 }
@@ -79,30 +80,51 @@ func handleSearchDSE(w ldap.ResponseWriter, m *ldap.Message) {
 	log.Printf("Request TimeLimit=%d", r.TimeLimit().Int())
 	log.Printf("Request SizeLimit=%d", r.SizeLimit().Int())
 
-	sql := "SELECT name, extension FROM users"
+	//sql := "SELECT name, extension FROM visual_phonebook"
+	sql := "SELECT CONCAT(TRIM(lastname) ,' ', TRIM(firstname)) as name, number FROM visual_phonebook INNER JOIN visual_phonebook_phones ON visual_phonebook.id = visual_phonebook_phones.contact_id"
+
 	sqlVals := []interface{}{}
 
 	swapField := func(v string) string {
 		switch v {
 		case "displayName":
-			return "name"
+			return "lastname"
 		case "telephoneNumber":
-			return "extension"
+			return "number"
 		default:
-			log.Printf("Invalid Field Name (%s), returned name", v)
-			return "name"
+			log.Printf("Invalid Field name (%s), returned lastname", v)
+			return "lastname"
 		}
 	}
 
 	getSubstringSearch := func(v []message.Substring) string {
+
+		var isnumeric = false
 		for _, fs := range v {
 			switch fsv := fs.(type) {
 			case message.SubstringInitial:
-				return string(fsv) + "%"
+				isnumeric = isNumeric(string(fsv))
+				if !isnumeric {
+					return string(fsv) + "%"
+				} else {
+					return string(fsv) + "%"
+				}
 			case message.SubstringAny:
-				return "%" + string(fsv) + "%"
+				isnumeric = isNumeric(string(fsv))
+				if !isnumeric {
+					return "%" + string(fsv) + "%"
+				} else {
+					return "%" + string(fsv) + "%"
+				}
+
 			case message.SubstringFinal:
-				return "%" + string(fsv)
+				isnumeric = isNumeric(string(fsv))
+				if !isnumeric {
+					return "%" + string(fsv)
+				} else {
+					return "%" + string(fsv)
+				}
+
 			}
 		}
 		return ""
@@ -136,7 +158,7 @@ func handleSearchDSE(w ldap.ResponseWriter, m *ldap.Message) {
 			default:
 				return ""
 			}
-			return ""
+
 		}
 
 		switch val := filter.(type) {
@@ -189,7 +211,7 @@ func handleSearchDSE(w ldap.ResponseWriter, m *ldap.Message) {
 
 	sql += " " + recursiveFilter(r.Filter(), true) + " "
 
-	sql += " ORDER BY name ASC LIMIT 0, ?"
+	sql += " ORDER BY lastname ASC LIMIT 0, ?"
 	if r.SizeLimit().Int() > 0 {
 		sqlVals = append(sqlVals, r.SizeLimit().Int())
 	} else {
@@ -201,11 +223,23 @@ func handleSearchDSE(w ldap.ResponseWriter, m *ldap.Message) {
 	if err != nil {
 		log.Printf("SQL ERROR: %s", err)
 	}
+	fmt.Println(fmt.Sprintf("resultat %#v", result))
 
 	for _, entry := range result {
 		e := ldap.NewSearchResultEntry("")
 		e.AddAttribute("displayName", message.AttributeValue(entry.Name))
-		e.AddAttribute("telephoneNumber", message.AttributeValue(entry.Extension))
+		e.AddAttribute("telephoneNumber", message.AttributeValue(entry.Number))
+		log.Printf("Number=%s", entry.Number)
+		log.Printf("Name=%s", entry.Name)
+		//#log.Printf("Number=%#v", entry)
 		w.Write(e)
 	}
+}
+
+// create a function to check if string is numeric
+func isNumeric(word string) bool {
+	return regexp.MustCompile(`\d`).MatchString(word)
+	// calling regexp.MustCompile() function to create the regular expression.
+	// calling MatchString() function that returns a bool that
+	// indicates whether a pattern is matched by the string.
 }

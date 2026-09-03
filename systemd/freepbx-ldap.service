@@ -2,7 +2,7 @@
 Description=FreePBX LDAP Service
 
 [Service]
-PIDFile=/var/run/freepbx-ldap.pid
+PIDFile=/run/freepbx-ldap.pid
 User=asterisk
 Group=asterisk
 WorkingDirectory=/opt/freepbx-ldap

@@ -1,4 +1,4 @@
-module github.com/a1comms/freepbx-ldap
+module freepbx-ldap
 
 go 1.14
 
