@@ -13,14 +13,25 @@ var (
 )
 
 func SQLConnect(sqlserver string, sqluser string, sqlpass string, sqldb string) (err error) {
-	if strings.ContainsRune(sqlserver, ':') {
-		dbConn, err = sql.Open("mysql", sqluser+":"+sqlpass+"@tcp("+sqlserver+")/"+sqldb)
-	} else {
-		dbConn, err = sql.Open("mysql", sqluser+":"+sqlpass+"@tcp("+sqlserver+":3306)/"+sqldb)
+
+	// IPv6 address in brackets without port
+	if strings.HasPrefix(sqlserver, "[") && strings.HasSuffix(sqlserver, "]") {
+		sqlserver += ":3306"
+
+		// IPv4/hostname without port
+	} else if !strings.ContainsRune(sqlserver, ':') {
+		sqlserver += ":3306"
 	}
+
+	dbConn, err = sql.Open(
+		"mysql",
+		sqluser+":"+sqlpass+"@tcp("+sqlserver+")/"+sqldb,
+	)
+
 	if err == nil {
 		err = dbConn.Ping()
 	}
+
 	return
 }
 
